@@ -1,16 +1,31 @@
 package sha3
 
-import (
-	"math"
-)
-
 type stateArray [5][5][]byte
+
+var indexMap = [5]int{2, 3, 4, 0, 1}
 
 func toStateArray(str []byte) stateArray {
 	b := len(str)
 	w := b / 25
-	l := math.Log2(float64(w))
+	//l := math.Log2(float64(w))
 
+	state := newStateArray(w)
+
+	for x := 0; x < 5; x++ {
+		for y := 0; y < 5; y++ {
+			for z := 0; z < w; z++ {
+				index := w*(5*y+x) + z
+				put(state, x, y, z, str[index])
+			}
+		}
+	}
+	return state
+}
+
+/*
+Create a new state array of the given length w.
+*/
+func newStateArray(w int) stateArray {
 	var state stateArray
 
 	for i := 0; i < 5; i++ {
@@ -18,5 +33,123 @@ func toStateArray(str []byte) stateArray {
 			state[i][j] = make([]byte, w)
 		}
 	}
+	return state
+}
+
+/*
+Implements the theta algorithm as specified by Keccak. Note that ^ is the XOR operator.
+*/
+func theta(state stateArray) stateArray {
+	w := len(state[0][0])
+
+	//Calculate the C mapping
+	var C [5][]byte
+	for x := 0; x < 5; x++ {
+		for z := 0; z < w; z++ {
+			C[x][z] = index(state, x, 0, z) ^
+				index(state, x, 1, z) ^
+				index(state, x, 2, z) ^
+				index(state, x, 3, z) ^
+				index(state, x, 4, z)
+		}
+	}
+
+	//Calculate the D mapping
+	var D [5][]byte
+	for x := 0; x < 5; x++ {
+		for z := 0; z < w; z++ {
+			D[x][z] = C[(x-1)%5][z] ^ C[(x+1)%5][(z-1)%w]
+		}
+	}
+	stateTheta := stateArrayMap(w, func(x int, y int, z int) byte { return index(state, x, y, z) ^ D[x][z] })
+
+	/*for x := 0; x < 5; x++ {
+		for y := 0; y < 5; y++ {
+			for z := 0; z < w; z++ {
+				value := index(state, x, y, z) ^ D[x][z]
+				put(stateTheta, x, y, z, value)
+			}
+		}
+	}*/
+
+	return stateTheta
+}
+
+/*
+Implements the rho algorithm as specified by Keccak.
+*/
+func rho(state stateArray) stateArray {
+
+	w := len(state[0][0])
+	stateRho := newStateArray(w)
+	for z := 0; z < w; z++ {
+		put(stateRho, 0, 0, z, index(state, 0, 0, z))
+	}
+
+	x, y := 1, 0
+	for t := 0; t <= 23; t++ {
+		for z := 0; z < w; z++ {
+			put(stateRho, x, y, z, index(state, x, y, (z-(t+1)*(t+2)/2)%w))
+		}
+		x, y = y, (2*x+3*y)%5
+	}
+
+	return stateRho
+}
+
+/*
+Implements the pi function as specified by Keccak.
+*/
+func pi(state stateArray) stateArray {
+	return state
+}
+
+/*
+Populate a state array with the given length with the given mapping function.
+*/
+func stateArrayMap(w int, l func(int, int, int) byte) stateArray {
+	stateNew := newStateArray(w)
+
+	for x := 0; x < 5; x++ {
+		for y := 0; y < 5; y++ {
+			for z := 0; z < w; z++ {
+				put(stateNew, x, y, z, l(x, y, z))
+			}
+		}
+	}
+
+	return stateNew
+}
+
+/*
+Access a value in the state array by the conventions of the Keccak state array.
+*/
+func index(state stateArray, i int, j int, k int) byte {
+	return state[indexMap[i]][indexMap[j]][k]
+}
+
+/*
+Put a value in the state array by the conventions of the Keccak state array.
+*/
+func put(state stateArray, i int, j int, k int, value byte) {
+	state[indexMap[i]][indexMap[j]][k] = value
+}
+
+/*
+Get a lane from the state array.
+*/
+func lane(state stateArray, i int, j int) []byte {
+	return state[indexMap[i]][indexMap[j]]
+}
+
+/*
+Get a plane from the state array.
+*/
+func plane(state stateArray, j int) [5][]byte {
+	var arr [5][]byte
+	for i := 0; i < 5; i++ {
+		arr[indexMap[i]] = lane(state, i, j)
+	}
+	return arr
 
 }
