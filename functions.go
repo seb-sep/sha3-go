@@ -1,5 +1,7 @@
 package sha3
 
+import "math"
+
 type stateArray [5][5][]byte
 
 var indexMap = [5]int{2, 3, 4, 0, 1}
@@ -101,7 +103,58 @@ func rho(state stateArray) stateArray {
 Implements the pi function as specified by Keccak.
 */
 func pi(state stateArray) stateArray {
-	return state
+	w := len(state[0][0])
+	return stateArrayMap(w, func(x int, y int, z int) byte { return index(state, (x+3*y)%5, x, z) })
+}
+
+/*
+Implements the chi function as specified by Keccak.
+*/
+func chi(state stateArray) stateArray {
+	w := len(state[0][0])
+	return stateArrayMap(w, func(x int, y int, z int) byte {
+		return index(state, x, y, z) ^
+			(index(state, (x+1)%5, y, z)^1)*index(state, (x+2)%5, y, z)
+	})
+}
+
+/*
+Implements the iota function as specified by Keccak.
+*/
+func iota(state stateArray, i int) stateArray {
+	w := len(state[0][0])
+	l := int(math.Log2(float64(w)))
+	stateIota := stateArrayMap(w, func(x int, y int, z int) byte { return index(state, x, y, z) })
+	//Are Go slices initialized to zero values?
+	RC := make([]byte, w)
+	for j := 0; j <= l; j++ {
+		RC[int(math.Pow(2.0, float64(j)))-1] = rc(j + 7*i)
+	}
+
+	for z := 0; z < w; z++ {
+		value := index(stateIota, 0, 0, z) ^ RC[z]
+		put(stateIota, 0, 0, z, value)
+	}
+	return stateIota
+}
+
+/*
+Implements the rc function as specified by Keccak.
+*/
+func rc(t int) byte {
+	if mod := t % 255; mod == 0 {
+		return 1
+	}
+	R := []byte{1, 0, 0, 0, 0, 0, 0, 0}
+	for i := 1; i <= 255; i++ {
+		R = append([]byte{0}, R...)
+		R[0] = R[0] ^ R[8]
+		R[4] = R[4] ^ R[8]
+		R[5] = R[5] ^ R[8]
+		R[6] = R[6] ^ R[8]
+		R = R[:7]
+	}
+	return R[0]
 }
 
 /*
