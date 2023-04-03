@@ -6,6 +6,9 @@ type stateArray [5][5][]byte
 
 var indexMap = [5]int{2, 3, 4, 0, 1}
 
+/*
+Convert a binary string to a state array, as specified by Keccak.
+*/
 func toStateArray(str []byte) stateArray {
 	b := len(str)
 	w := b / 25
@@ -22,6 +25,37 @@ func toStateArray(str []byte) stateArray {
 		}
 	}
 	return state
+}
+
+/*
+Convert a state array back to a binary string, as specified by Keccak.
+*/
+func toBinaryString(state stateArray) []byte {
+	str := []byte{}
+	for j := 0; j < 5; j++ {
+		str = append(str, plane(state, j)...)
+	}
+	return str
+}
+
+/*
+Get a lane from the state array.
+A lane is a concatenation of all bits in a state array of a given row and column.
+*/
+func lane(state stateArray, i int, j int) []byte {
+	return state[indexMap[i]][indexMap[j]]
+}
+
+/*
+Get a plane from the state array.
+A plane is a concatenation of all lanes in the same row.
+*/
+func plane(state stateArray, j int) []byte {
+	str := []byte{}
+	for i := 0; i < 5; i++ {
+		str = append(str, lane(state, i, j)...)
+	}
+	return str
 }
 
 /*
@@ -158,6 +192,29 @@ func rc(t int) byte {
 }
 
 /*
+Implements the Rnd function as specified by Keccak.
+Applies the theta, rho, pi, chi, and iota functions in sequence to a state array.
+*/
+func rnd(state stateArray, rounds int) stateArray {
+	return iota(chi(pi(rho(theta(state)))), rounds)
+}
+
+/*
+Implements the Keccak-p algorithm.
+*/
+func KeccakP(str []byte, rounds int) []byte {
+	state := toStateArray(str)
+	b := len(str)
+	w := b / 25
+	l := int(math.Log2(float64(w)))
+	for i := (12 + 2*l - rounds); i <= (12 + 2*l - 1); i++ {
+		state = rnd(state, i)
+	}
+
+	return toBinaryString(state)
+}
+
+/*
 Populate a state array with the given length with the given mapping function.
 */
 func stateArrayMap(w int, l func(int, int, int) byte) stateArray {
@@ -186,23 +243,4 @@ Put a value in the state array by the conventions of the Keccak state array.
 */
 func put(state stateArray, i int, j int, k int, value byte) {
 	state[indexMap[i]][indexMap[j]][k] = value
-}
-
-/*
-Get a lane from the state array.
-*/
-func lane(state stateArray, i int, j int) []byte {
-	return state[indexMap[i]][indexMap[j]]
-}
-
-/*
-Get a plane from the state array.
-*/
-func plane(state stateArray, j int) [5][]byte {
-	var arr [5][]byte
-	for i := 0; i < 5; i++ {
-		arr[indexMap[i]] = lane(state, i, j)
-	}
-	return arr
-
 }
