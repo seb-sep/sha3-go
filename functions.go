@@ -1,6 +1,8 @@
 package sha3
 
-import "math"
+import (
+	"math"
+)
 
 type stateArray [5][5][]byte
 
@@ -211,7 +213,69 @@ func KeccakP(str []byte, rounds int) []byte {
 		state = rnd(state, i)
 	}
 
+	//TODO: Assert that input and output strings are the same length?
 	return toBinaryString(state)
+}
+
+/*
+Implements the Keccak-f algorithm.
+*/
+func KeccakF(str []byte) []byte {
+	b := len(str)
+	w := b / 25
+	l := int(math.Log2(float64(w)))
+	return KeccakP(str, 12+2*l)
+}
+
+/*
+Implements the sponge function as specified by Keccak.
+Spongs maps the binary string of arbitrary length to a binary string
+of length d.
+f is the mapping function of b-length binary strings to b-length binary strings,
+pad is the given padding function,
+r is the padding rate,
+str is the input binary string,
+and d is the target length.
+*/
+func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r int, str []byte, d uint) []byte {
+	bitwiseXOR := func(str1 []byte, str2 []byte) []byte {
+		l := len(str1)
+		/*if l != len(str2) {
+			return []byte{}, fmt.Errorf("Binary strings are not the same length")
+		}*/
+		result := make([]byte, l)
+		for i := 0; i < l; i++ {
+			result[i] = str1[i] ^ str2[i]
+		}
+		return result
+	}
+
+	P := append(str, pad(r, uint(len(str)))...)
+	n := len(P) / r
+	c := b - r
+	S := make([]byte, b)
+	for i := 0; i <= n-1; i++ {
+		S = f(bitwiseXOR(S, append(P[i:i+r], make([]byte, c)...)))
+	}
+	Z := []byte{}
+	for int(d) > len(Z) {
+		Z = append(Z, S[0:r]...)
+		S = f(S)
+	}
+	return Z
+}
+
+/*
+Implements the pad10*1 padding function as specified by Keccak.
+As specified, pad(x, m) returns a string such that m + len(pad(x, m))
+is a multiple of x.
+*/
+func pad(x int, m uint) []byte {
+	j := (-int(m) - 2) % x
+	str := make([]byte, j+2)
+	str[0] = 1
+	str[j+1] = 1
+	return str
 }
 
 /*
