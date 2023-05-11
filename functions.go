@@ -264,6 +264,9 @@ and initializes a zero string S of length b. Then, for all the substrings, it co
 zero string of length c, XORs it with S,runs f on that, and stores the result of f in S. Sponge then initializes
 and empty string Z, and until the length of Z is greater than or equal to d, Sponge concatenates the first r bits of
 S to Z and reruns f on S. Finally, Sponge returns the first d bits of Z.
+
+Note: While b is not passed in to paramaterize the sponge construction in the Keccak spec, it is necessary
+here since b cannot be programatically inferred from the choice of f.
 */
 func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r int) func(str []byte, d uint) []byte {
 	bitwiseXOR := func(str1 []byte, str2 []byte) []byte {
@@ -294,7 +297,37 @@ func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r 
 
 }
 
-//var KeccakC func(str []byte, d uint) := Sponge()
+/*
+Keccak denotes the family of sponge functions which use a permutation of Keccak-p[b, 12+2l]
+and pad10*1. Keccak[c] represents a special case of Keccak in which b=1600.
+*/
+func KeccakC(c int) func(str []byte, d uint) []byte {
+	return Sponge(KeccakP(1600, 24), 1600, pad, 1600-c)
+}
+
+/*
+The SHA-3 cryptographic hash function, where len is the desired length of the output.
+Restricted to 224, 256, 384, and 512-bit output lengths.
+*/
+func SHA3(str []byte, len uint) []byte {
+	return KeccakC(int(len)*2)(append(str, 0, 1), len)
+}
+
+/*
+SHA-3 extendable output functions, where the given output length is arbitrary.
+n must be one of 128 or 256, for SHAKE128 and SHAKE256 respectively.
+*/
+func SHAKE(n int, str []byte, len uint) []byte {
+	return KeccakC(n*2)(append(str, 1, 1, 1, 1), len)
+}
+
+/*
+SHA-3 extendable output functions, where the given output length is arbitrary.
+n must be one of 128 or 256, for SHAKE128 and SHAKE256 respectively.
+*/
+func RawSHAKE(n int, str []byte, len uint) []byte {
+	return KeccakC(n*2)(append(str, 1, 1), len)
+}
 
 /*
 Implements the pad10*1 padding function as specified by Keccak.
