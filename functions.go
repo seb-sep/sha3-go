@@ -4,12 +4,17 @@ import (
 	"math"
 )
 
+// A state array is a 5x5xw array of bits, where w is 1/25 the length of the input binary string.
 type stateArray [5][5][]byte
 
+// Used as a mapping function from the sequential order of array indices to the order
+// specified by Keccak for the x- and y-axes of the state array.
 var indexMap = [5]int{2, 3, 4, 0, 1}
 
 /*
 Convert a binary string to a state array, as specified by Keccak.
+Essentially, the binary input string is broken into 25 equal pieces which are then rearranged into a 3x3
+array of 5 rows and 5 columns.
 */
 func toStateArray(str []byte) stateArray {
 	b := len(str)
@@ -76,6 +81,10 @@ func newStateArray(w int) stateArray {
 
 /*
 Implements the theta algorithm as specified by Keccak. Note that ^ is the XOR operator.
+For each cell in the state array, theta selects two columns: one with the same z-value and a smaller x-value by 1,
+and a column with one less z-value and one greater x-value (all values wrapping around). Theta calculates the parities
+of the columns by XORing the elements of the columns, XORing the parities together, and then XORing that result with
+the cell's value.
 */
 func theta(state stateArray) stateArray {
 	w := len(state[0][0])
@@ -114,7 +123,8 @@ func theta(state stateArray) stateArray {
 }
 
 /*
-Implements the rho algorithm as specified by Keccak.
+Implements the rho algorithm as specified by Keccak. Rho maintains the x- and y-values of each cell in the state
+array, but increments the z-value by varying offsets which wrap around w.
 */
 func rho(state stateArray) stateArray {
 
@@ -137,6 +147,8 @@ func rho(state stateArray) stateArray {
 
 /*
 Implements the pi function as specified by Keccak.
+Where rho preserves the x- and y-values of cells, pi preserves the z-values of cells and rotates the x- and y-values.
+Picture a sort of rotation of each slice in the state array about its center (but not a true 90-degree rotation).
 */
 func pi(state stateArray) stateArray {
 	w := len(state[0][0])
@@ -144,7 +156,8 @@ func pi(state stateArray) stateArray {
 }
 
 /*
-Implements the chi function as specified by Keccak.
+Implements the chi function as specified by Keccak. Chi takes each cell in the state array, and XORs it with
+two other cells in its row: specifically, those with x-values greater by one and two, wrapping around.
 */
 func chi(state stateArray) stateArray {
 	w := len(state[0][0])
@@ -155,7 +168,8 @@ func chi(state stateArray) stateArray {
 }
 
 /*
-Implements the iota function as specified by Keccak.
+Implements the iota function as specified by Keccak. Iota XORs each bit of the center lane (Lane(0,0)) by an output
+of rc() which depends on the round index i.
 */
 func iota(state stateArray, i int) stateArray {
 	w := len(state[0][0])
@@ -175,7 +189,10 @@ func iota(state stateArray, i int) stateArray {
 }
 
 /*
-Implements the rc function as specified by Keccak.
+Implements the rc function as specified by Keccak. rc takes an integer and calculates a bit based off
+that integer. For a certain number of iterations, rc appends a 0 to the front of an initial binary array, XORs various
+values in the array with the ninth value in the array, and then truncates that last value. After all iterations have
+completed, rc returns the first bit in the array.
 */
 func rc(t int) byte {
 	if mod := t % 255; mod == 0 {
@@ -202,47 +219,56 @@ func rnd(state stateArray, rounds int) stateArray {
 }
 
 /*
-Implements the Keccak-p algorithm.
+Implements the Keccak-p algorithm. Keccak-p converts the string to a state array,
+applies the Rnd function to it for the specified number of iterations, and then converts the state array
+back into a binary string.
 */
-func KeccakP(str []byte, rounds int) []byte {
-	state := toStateArray(str)
-	b := len(str)
-	w := b / 25
-	l := int(math.Log2(float64(w)))
-	for i := (12 + 2*l - rounds); i <= (12 + 2*l - 1); i++ {
-		state = rnd(state, i)
+func KeccakP(b int, rounds int) func(str []byte) []byte {
+
+	return func(str []byte) []byte {
+		state := toStateArray(str)
+		assert(len(str) == b, "Length of string S is not b")
+		w := b / 25
+		l := int(math.Log2(float64(w)))
+		for i := (12 + 2*l - rounds); i <= (12 + 2*l - 1); i++ {
+			state = rnd(state, i)
+		}
+
+		//TODO: Assert that input and output strings are the same length?
+		return toBinaryString(state)
 	}
-
-	//TODO: Assert that input and output strings are the same length?
-	return toBinaryString(state)
 }
 
 /*
-Implements the Keccak-f algorithm.
+Keccak-f is a special case of Keccak-p in which the number of rounds = 12 + 2l, where l is the binary log of
+the state array width.
 */
-func KeccakF(str []byte) []byte {
-	b := len(str)
+func KeccakF(b int) func(str []byte) []byte {
 	w := b / 25
 	l := int(math.Log2(float64(w)))
-	return KeccakP(str, 12+2*l)
+	return KeccakP(b, 12+2*l)
 }
 
 /*
-Implements the sponge function as specified by Keccak.
-Spongs maps the binary string of arbitrary length to a binary string
+Implements the sponge construction as specified by Keccak.
+Sponge returns a function mapping the binary string of arbitrary length to a binary string
 of length d.
 f is the mapping function of b-length binary strings to b-length binary strings,
 pad is the given padding function,
 r is the padding rate,
 str is the input binary string,
 and d is the target length.
+
+Sponge first concatenates the appropriate padding onto the input string, splits it into substrings of length r,
+and initializes a zero string S of length b. Then, for all the substrings, it concatenates each substring with a
+zero string of length c, XORs it with S,runs f on that, and stores the result of f in S. Sponge then initializes
+and empty string Z, and until the length of Z is greater than or equal to d, Sponge concatenates the first r bits of
+S to Z and reruns f on S. Finally, Sponge returns the first d bits of Z.
 */
-func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r int, str []byte, d uint) []byte {
+func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r int) func(str []byte, d uint) []byte {
 	bitwiseXOR := func(str1 []byte, str2 []byte) []byte {
 		l := len(str1)
-		/*if l != len(str2) {
-			return []byte{}, fmt.Errorf("Binary strings are not the same length")
-		}*/
+		assert(l != len(str2), "Binary strings are not the same length")
 		result := make([]byte, l)
 		for i := 0; i < l; i++ {
 			result[i] = str1[i] ^ str2[i]
@@ -250,31 +276,37 @@ func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r 
 		return result
 	}
 
-	P := append(str, pad(r, uint(len(str)))...)
-	n := len(P) / r
-	c := b - r
-	S := make([]byte, b)
-	for i := 0; i <= n-1; i++ {
-		S = f(bitwiseXOR(S, append(P[i:i+r], make([]byte, c)...)))
+	return func(str []byte, d uint) []byte {
+		P := append(str, pad(r, uint(len(str)))...)
+		n := len(P) / r
+		c := b - r
+		S := make([]byte, b)
+		for i := 0; i <= n-1; i++ {
+			S = f(bitwiseXOR(S, append(P[i:i+r], make([]byte, c)...)))
+		}
+		Z := []byte{}
+		for int(d) > len(Z) {
+			Z = append(Z, S[0:r]...)
+			S = f(S)
+		}
+		return Z
 	}
-	Z := []byte{}
-	for int(d) > len(Z) {
-		Z = append(Z, S[0:r]...)
-		S = f(S)
-	}
-	return Z
+
 }
+
+//var KeccakC func(str []byte, d uint) := Sponge()
 
 /*
 Implements the pad10*1 padding function as specified by Keccak.
 As specified, pad(x, m) returns a string such that m + len(pad(x, m))
-is a multiple of x.
+is a multiple of x. The output string is in the shape 10*1, hence the name.
 */
 func pad(x int, m uint) []byte {
 	j := (-int(m) - 2) % x
 	str := make([]byte, j+2)
 	str[0] = 1
 	str[j+1] = 1
+	assert((len(str)+int(m))%x == 0, "padding is improper length")
 	return str
 }
 
@@ -307,4 +339,11 @@ Put a value in the state array by the conventions of the Keccak state array.
 */
 func put(state stateArray, i int, j int, k int, value byte) {
 	state[indexMap[i]][indexMap[j]][k] = value
+}
+
+// Runtime boolean assertion similar to assert() in C.
+func assert(cond bool, msg string) {
+	if !cond {
+		panic(msg)
+	}
 }
