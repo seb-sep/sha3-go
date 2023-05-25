@@ -46,6 +46,59 @@ func toBinaryString(state stateArray) []byte {
 }
 
 /*
+Compress a binary string into a true byte string for type conversions.
+We know that this binary string must be of at least length 25, so
+an edge case of a string size < 8 need not be handled.
+*/
+func bitsToBytes(bits []byte) []byte {
+	//input slice must be of length 8 or less
+	bitsToByte := func(bits []byte) byte {
+		len := len(bits)
+		assert(len <= 8, "bitsToByte: bit string must be 8 bits or less")
+		var ans byte
+		for i := len - 1; i >= 0; i-- {
+			ans += bits[len-1-i] << i
+		}
+		return ans
+	}
+
+	bitLen := len(bits)
+	byteLen := bitLen / 8
+	if bitLen%8 != 0 {
+		byteLen++
+	}
+
+	bytes := make([]byte, byteLen)
+	for i := 1; i <= byteLen; i++ {
+		bytes[byteLen-i] = bitsToByte(bits[bitLen-i*8 : bitLen-(i-1)*8])
+	}
+	bytes[0] = bitsToByte(bits[:bitLen-(byteLen-1)*8])
+	return bytes
+}
+
+/*
+Expand a byte string into a binary string for use w/Keccak.
+*/
+func bytesToBits(bytes []byte) []byte {
+	byteToBits := func(b byte) []byte {
+		bits := make([]byte, 8)
+		for i := 0; i < 8; i++ {
+			bits[i] = (b>>i - 7) & 0b00000001
+		}
+		return bits
+	}
+	byteLen := len(bytes)
+	bitLen := byteLen * 8
+
+	bits := make([]byte, bitLen)
+
+	for i := 0; i < byteLen; i++ {
+		bits = append(bits, byteToBits(bytes[i])...)
+	}
+	return bits
+}
+
+/*
 Get a lane from the state array.
 A lane is a concatenation of all bits in a state array of a given row and column.
 */
@@ -170,8 +223,9 @@ func chi(state stateArray) stateArray {
 /*
 Implements the iota function as specified by Keccak. Iota XORs each bit of the center lane (Lane(0,0)) by an output
 of rc() which depends on the round index i.
+Note: underscore is to prevent collisions with Go's iota keyword.
 */
-func iota(state stateArray, i int) stateArray {
+func iota_(state stateArray, i int) stateArray {
 	w := len(state[0][0])
 	l := int(math.Log2(float64(w)))
 	stateIota := stateArrayMap(w, func(x int, y int, z int) byte { return index(state, x, y, z) })
@@ -195,7 +249,7 @@ values in the array with the ninth value in the array, and then truncates that l
 completed, rc returns the first bit in the array.
 */
 func rc(t int) byte {
-	if mod := t % 255; mod == 0 {
+	if t%255 == 0 {
 		return 1
 	}
 	R := []byte{1, 0, 0, 0, 0, 0, 0, 0}
@@ -215,7 +269,7 @@ Implements the Rnd function as specified by Keccak.
 Applies the theta, rho, pi, chi, and iota functions in sequence to a state array.
 */
 func rnd(state stateArray, rounds int) stateArray {
-	return iota(chi(pi(rho(theta(state)))), rounds)
+	return iota_(chi(pi(rho(theta(state)))), rounds)
 }
 
 /*
