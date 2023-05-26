@@ -363,8 +363,14 @@ func KeccakC(c int) func(str []byte, d uint) []byte {
 The SHA-3 cryptographic hash function, where len is the desired length of the output.
 Restricted to 224, 256, 384, and 512-bit output lengths.
 */
-func SHA3(str []byte, len uint) []byte {
+func sha3(str []byte, len uint) []byte {
 	return KeccakC(int(len)*2)(append(str, 0, 1), len)
+}
+
+func SHA256(str string) string {
+	binString := bytesToBits([]byte(str))
+	output := sha3(binString, 256)
+	return string(bitsToBytes(output))
 }
 
 /*
