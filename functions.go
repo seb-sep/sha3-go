@@ -1,4 +1,4 @@
-package sha3
+package sha3go
 
 import (
 	"math"
@@ -63,16 +63,21 @@ func bitsToBytes(bits []byte) []byte {
 	}
 
 	bitLen := len(bits)
+	extraBits := bitLen % 8
 	byteLen := bitLen / 8
-	if bitLen%8 != 0 {
+	bytes := make([]byte, byteLen)
+	j := 0
+	if extraBits != 0 {
 		byteLen++
+		j++
+		bytes[0] = bitsToByte(bits[:extraBits])
+		bytes = append(bytes, 0)
 	}
 
-	bytes := make([]byte, byteLen)
-	for i := 1; i <= byteLen; i++ {
-		bytes[byteLen-i] = bitsToByte(bits[bitLen-i*8 : bitLen-(i-1)*8])
+	for i := extraBits; i <= bitLen-8; i += 8 {
+		bytes[j] = bitsToByte(bits[i : i+8])
 	}
-	bytes[0] = bitsToByte(bits[:bitLen-(byteLen-1)*8])
+
 	return bytes
 }
 

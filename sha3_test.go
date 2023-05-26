@@ -1,4 +1,4 @@
-package sha3
+package sha3go
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ func TestSHAStrings(t *testing.T) {
 */
 
 func TestBytesToBits(t *testing.T) {
-	assertEquals(t, bytesToBits([]byte{1, 2, 3}), []byte{1, 0, 1})
+	assertEquals(t, bytesToBits([]byte{0b1011, 0b10, 0b1001}), []byte{1, 0, 1, 1, 1, 0, 1, 0, 0, 1})
 }
 
 func assertEquals[T any](t *testing.T, val, expect T) {
