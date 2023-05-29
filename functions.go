@@ -2,6 +2,7 @@ package sha3go
 
 import (
 	"math"
+	"math/big"
 )
 
 // A state array is a 5x5xw array of bits, where w is 1/25 the length of the input binary string.
@@ -10,6 +11,15 @@ type stateArray [5][5][]byte
 // Used as a mapping function from the sequential order of array indices to the order
 // specified by Keccak for the x- and y-axes of the state array.
 var indexMap = [5]int{2, 3, 4, 0, 1}
+
+type digestLength uint
+
+const (
+	len224 digestLength = 224
+	len256 digestLength = 256
+	len384 digestLength = 384
+	len512 digestLength = 512
+)
 
 /*
 Convert a binary string to a state array, as specified by Keccak.
@@ -76,6 +86,7 @@ func bitsToBytes(bits []byte) []byte {
 
 	for i := extraBits; i <= bitLen-8; i += 8 {
 		bytes[j] = bitsToByte(bits[i : i+8])
+		j++
 	}
 
 	return bytes
@@ -88,19 +99,26 @@ func bytesToBits(bytes []byte) []byte {
 	byteToBits := func(b byte) []byte {
 		bits := make([]byte, 8)
 		for i := 0; i < 8; i++ {
-			bits[i] = (b>>i - 7) & 0b00000001
+			bits[i] = (b >> (7 - i)) & 0b00000001
 		}
 		return bits
 	}
 	byteLen := len(bytes)
-	bitLen := byteLen * 8
-
-	bits := make([]byte, bitLen)
+	bits := []byte{}
 
 	for i := 0; i < byteLen; i++ {
 		bits = append(bits, byteToBits(bytes[i])...)
 	}
 	return bits
+}
+
+/*
+Wrapper over math.big.Mod method which implements Euclidean modulo arithmetic,
+unlike Go's % and math.Mod functions.
+*/
+func mod(x, y int) int {
+	bigX, bigY := big.NewInt(int64(x)), big.NewInt(int64(y))
+	return int(bigX.Mod(bigX, bigY).Int64())
 }
 
 /*
@@ -150,6 +168,7 @@ func theta(state stateArray) stateArray {
 	//Calculate the C mapping
 	var C [5][]byte
 	for x := 0; x < 5; x++ {
+		C[x] = make([]byte, w)
 		for z := 0; z < w; z++ {
 			C[x][z] = index(state, x, 0, z) ^
 				index(state, x, 1, z) ^
@@ -162,8 +181,9 @@ func theta(state stateArray) stateArray {
 	//Calculate the D mapping
 	var D [5][]byte
 	for x := 0; x < 5; x++ {
+		D[x] = make([]byte, w)
 		for z := 0; z < w; z++ {
-			D[x][z] = C[(x-1)%5][z] ^ C[(x+1)%5][(z-1)%w]
+			D[x][z] = C[mod((x-1), 5)][z] ^ C[(x+1)%5][mod((z-1), w)]
 		}
 	}
 	stateTheta := stateArrayMap(w, func(x int, y int, z int) byte { return index(state, x, y, z) ^ D[x][z] })
@@ -195,7 +215,7 @@ func rho(state stateArray) stateArray {
 	x, y := 1, 0
 	for t := 0; t <= 23; t++ {
 		for z := 0; z < w; z++ {
-			put(stateRho, x, y, z, index(state, x, y, (z-(t+1)*(t+2)/2)%w))
+			put(stateRho, x, y, z, index(state, x, y, mod((z-(t+1)*(t+2)/2), w)))
 		}
 		x, y = y, (2*x+3*y)%5
 	}
@@ -264,7 +284,7 @@ func rc(t int) byte {
 		R[4] = R[4] ^ R[8]
 		R[5] = R[5] ^ R[8]
 		R[6] = R[6] ^ R[8]
-		R = R[:7]
+		R = R[:8]
 	}
 	return R[0]
 }
@@ -330,7 +350,7 @@ here since b cannot be programatically inferred from the choice of f.
 func Sponge(f func(str []byte) []byte, b int, pad func(x int, m uint) []byte, r int) func(str []byte, d uint) []byte {
 	bitwiseXOR := func(str1 []byte, str2 []byte) []byte {
 		l := len(str1)
-		assert(l != len(str2), "Binary strings are not the same length")
+		assert(l == len(str2), "Binary strings are not the same length")
 		result := make([]byte, l)
 		for i := 0; i < l; i++ {
 			result[i] = str1[i] ^ str2[i]
@@ -368,14 +388,10 @@ func KeccakC(c int) func(str []byte, d uint) []byte {
 The SHA-3 cryptographic hash function, where len is the desired length of the output.
 Restricted to 224, 256, 384, and 512-bit output lengths.
 */
-func sha3(str []byte, len uint) []byte {
-	return KeccakC(int(len)*2)(append(str, 0, 1), len)
-}
-
-func SHA256(str string) string {
-	binString := bytesToBits([]byte(str))
-	output := sha3(binString, 256)
-	return string(bitsToBytes(output))
+func sha3(data []byte, len digestLength) []byte {
+	str := bytesToBits(data)
+	output := KeccakC(int(len)*2)(append(str, 0, 1), uint(len))
+	return bitsToBytes(output)
 }
 
 /*
@@ -399,11 +415,16 @@ Implements the pad10*1 padding function as specified by Keccak.
 As specified, pad(x, m) returns a string such that m + len(pad(x, m))
 is a multiple of x. The output string is in the shape 10*1, hence the name.
 */
+
+// TODO: % in Go is a REMAINDER operator, NOT a modulo, use math.big.Int.Mod instead
 func pad(x int, m uint) []byte {
-	j := (-int(m) - 2) % x
-	str := make([]byte, j+2)
+
+	j := big.NewInt(0)
+	//j := (-int(m) - 2) % x
+	j.Mod(big.NewInt(-int64(m)-2), big.NewInt(int64(x)))
+	str := make([]byte, j.Int64()+2)
 	str[0] = 1
-	str[j+1] = 1
+	str[len(str)-1] = 1
 	assert((len(str)+int(m))%x == 0, "padding is improper length")
 	return str
 }
