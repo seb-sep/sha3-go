@@ -394,6 +394,10 @@ func sha3(data []byte, len digestLength) []byte {
 	return bitsToBytes(output)
 }
 
+func SHA3256(data []byte) []byte {
+	return sha3(data, len256)
+}
+
 /*
 SHA-3 extendable output functions, where the given output length is arbitrary.
 n must be one of 128 or 256, for SHAKE128 and SHAKE256 respectively.
