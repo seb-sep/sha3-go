@@ -186,7 +186,7 @@ func theta(state stateArray) stateArray {
 			D[x][z] = C[mod((x-1), 5)][z] ^ C[(x+1)%5][mod((z-1), w)]
 		}
 	}
-	stateTheta := stateArrayMap(w, func(x int, y int, z int) byte { return index(state, x, y, z) ^ D[x][z] })
+	return stateArrayMap(w, func(x int, y int, z int) byte { return index(state, x, y, z) ^ D[x][z] })
 
 	/*for x := 0; x < 5; x++ {
 		for y := 0; y < 5; y++ {
@@ -197,7 +197,6 @@ func theta(state stateArray) stateArray {
 		}
 	}*/
 
-	return stateTheta
 }
 
 /*
@@ -239,10 +238,11 @@ two other cells in its row: specifically, those with x-values greater by one and
 */
 func chi(state stateArray) stateArray {
 	w := len(state[0][0])
-	return stateArrayMap(w, func(x int, y int, z int) byte {
-		return index(state, x, y, z) ^
-			(index(state, (x+1)%5, y, z)^1)*index(state, (x+2)%5, y, z)
-	})
+	return stateArrayMap(w,
+		func(x int, y int, z int) byte {
+			return index(state, x, y, z) ^
+				((index(state, (x+1)%5, y, z) ^ 1) * index(state, (x+2)%5, y, z))
+		})
 }
 
 /*

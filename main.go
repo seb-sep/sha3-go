@@ -49,7 +49,7 @@ func main() {
 	{
 		if print {
 			for i := 0; i < 1000; i++ {
-				fmt.Println(sha3go.SHA3256([]byte(input)))
+				fmt.Println(string(sha3go.SHA3256([]byte(input))))
 			}
 		} else {
 			for i := 0; i < 1000; i++ {
